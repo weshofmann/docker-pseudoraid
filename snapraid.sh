@@ -1,6 +1,6 @@
 #!/bin/sh
 
-ures that configuration files for both SnapRAID and snapraid-runner are present
+# Enures that configuration files for both SnapRAID and snapraid-runner are present
 # in /config. In reality, both files should be edited manually before running this
 # container to ensure correct operation.
 
