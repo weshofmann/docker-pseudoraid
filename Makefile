@@ -12,7 +12,7 @@ runshell: stop build
 	docker run -it --rm $(docker_flags) $(docker_vols) $(img_name) /bin/bash
 
 stop:
-	docker kill $(container_name) || true
+	docker stop $(container_name) || true
 	docker rm $(container_name) || true
 
 run: stop build
