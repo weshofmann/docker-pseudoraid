@@ -1,0 +1,23 @@
+FROM ubuntu:latest
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+      && apt-get -y install software-properties-common \
+      && add-apt-repository ppa:tikhonov/snapraid \
+      && apt-get update
+
+RUN apt-get update \
+      && apt-get -y install python git bash vim curl smartmontools \
+      && apt-get -y install snapraid mergerfs
+
+RUN git clone https://github.com/Chronial/snapraid-runner.git /app/snapraid-runner && \
+    chmod +x /app/snapraid-runner/snapraid-runner.py && \
+    rm -rf /var/cache/apk/*
+
+VOLUME /share /config
+
+COPY entrypoint /entrypoint
+RUN chmod 755 /entrypoint
+
+CMD ["/entrypoint"]
