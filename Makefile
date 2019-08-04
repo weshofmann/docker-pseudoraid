@@ -1,7 +1,7 @@
 img_name := weshofmann/qnap-pseudoraid
 container_name := qnap-pseudoraid-test
 docker_flags := --name $(container_name) --cap-add SYS_ADMIN --cap-add MKNOD --device /dev/fuse 
-docker_vols := -v /share/DockerData/pseudoraid/config:/config -v /share:/share:shared
+docker_vols := -v /share/DockerData/qnap-pseudoraid/config:/config -v /share:/share:shared
 
 all: build
 		
