@@ -9,11 +9,9 @@ RUN git clone https://github.com/Chronial/snapraid-runner.git /app/snapraid-runn
     chmod +x /app/snapraid-runner/snapraid-runner.py && \
     rm -rf /var/cache/apk/*
 
-RUN echo '0 3 * * * /usr/bin/python /app/snapraid-runner/snapraid-runner.py -c /config/snapraid-runner.conf' > /etc/crontabs/root
-
 VOLUME /share /config
 
-COPY /snapraid.sh /mergerfs.sh /entrypoint.sh  /
-RUN chmod 755 /snapraid.sh /mergerfs.sh /entrypoint.sh
+COPY entrypoint /entrypoint
+RUN chmod 755 /entrypoint
 
-CMD ["/entrypoint.sh"]
+CMD ["/entrypoint"]

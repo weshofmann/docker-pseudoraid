@@ -1,0 +1,180 @@
+#!/bin/bash
+
+set -e
+
+cleanup() {
+  local code="${?:-1}"
+  echo
+  echo "* cleaning up..."
+  if cat /proc/mounts | grep "${MERGERFS_MOUNT}.*fuse.mergerfs" 1>/dev/null 2>&1; then
+    echo "   - unmounting mergerfs."
+    if fusermount -u ${MERGERFS_MOUNT}; then
+      echo "   - unmount successful"
+    fi
+  fi
+  echo
+  echo "* Exiting with code: ${code}"
+  echo
+}
+trap "exit" INT TERM QUIT
+trap "cleanup" EXIT
+
+red() {
+  printf "\033[0;31m$*\033[0m"
+}
+error() {
+  local line="$1"
+  local msg="$2"
+  local code="${3:-1}"
+  echo
+  echo "==> $(red ERROR) in /entrypoint at or near line ${line}:"
+  if [ -n "${msg}" ] ; then
+    echo 
+    echo "$(red ERROR Message):"
+    echo "--------------"
+    echo "${msg}"
+    echo "--------------"
+  fi
+  echo
+  echo "==> Exiting with status code: ${code}"
+  echo
+  exit "${code}"
+}
+trap 'error ${LINENO}' ERR
+
+join() {
+  local IFS="$1"
+  shift
+  echo "$*"
+}
+
+validate-config() {
+  echo "* checking config files exist..."
+  # make sure we have our config files in /config
+  if [ ! -f /config/snapraid.conf ]; then
+    error ${LINENO} \
+      "/config/snapraid.conf found.  This is required to start the container!" 
+  fi
+  if [ ! -f /config/snapraid-runner.conf ]; then
+    error ${LINENO} \
+      "/config/snapraid-runner.conf found.  This is required to start the container!"
+  fi
+  if [ ! -f /config/mergerfs.conf ]; then
+    error ${LINENO} \
+      "/config/mergerfs.conf found.  This is required to start the container!"
+  fi
+
+  # makesure /etc/snapraid.conf is a symlink to /config/snapraid.conf
+  if [ ! -L /etc/snapraid.conf ]; then
+    if [ -f /etc/snapraid.conf ]; then
+      rm -f /etc/snapraid.conf
+    fi
+    ln -s /config/snapraid.conf /etc/snapraid.conf
+  fi
+
+  # Now let's do some validation on the sources we'll use
+  echo "* validating config files..."
+  source /config/mergerfs.conf
+  MERGERFS_SOURCES=$(grep "^data" /config/snapraid.conf | sed 's/data\s\+\S\+\s\+//')
+  sources="${MERGERFS_SOURCES}"
+  parity="$(grep "^[2-6]\?-\?parity" /config/snapraid.conf  | sed 's/.*parity\s\+//')"
+  for i in ${parity}; do
+    sources="${sources} $(dirname $i)"
+  done
+  for i in ${sources}; do
+    echo "   - validating source: ${i} ..."
+    if [ -e "$i" ]; then
+      if [ ! -L "$i" ]; then
+        error ${LINENO} \
+          "Path ${i} is not a symlink! On Qnap, it should be a symlink!"  
+      fi
+      if [ ! -f "$i/volume_label" ] || [ "$(cat $i/volume_label)" != "$(basename $i)" ]; then
+        error ${LINENO} \
+          "$(echo "Path ${i} does not have correct volume_label!  Because Qnap doesn't"; 
+            echo "support UUIDS and doesn't reliably assign correct volume labels,";
+            echo "we also check ${i}/volume_label which should contain the expected";
+            echo "volume label.  e.g.:";
+            echo "   if the directory is /share/Storage1";
+            echo "   then /share/Storage1/volume_label should contain the text: \"Storage1\""
+            )"
+      fi
+    else
+      error ${LINENO} \
+        "Path $i does not exist!  On Qnap, it should be a symlink!"
+      exit 1
+    fi
+  done
+  echo "   - config files validated."
+  echo
+}
+
+process-config() {
+  echo "* processing config files..."
+
+  # read our mergerfs config
+
+  # build a list of source directories from snapraid.conf "data" lines
+
+  # ensure that 
+  echo "   - processing MERGERFS_REL_PATH ..."
+  if [ -n "x${MERGERFS_REL_PATH}" ]; then
+    local tmp=""
+    for i in ${MERGERFS_SOURCES}; do
+      if [ ! -d "$i/${MERGERFS_REL_PATH}" ]; then
+        echo "      - creating dir: ${i}/${MERGERFS_REL_PATH}"
+        mkdir -p "$i/${MERGERFS_REL_PATH}"
+        chmod a+rwx "$i/${MERGERFS_REL_PATH}"
+      fi
+      echo "      - using dir: ${i}/${MERGERFS_REL_PATH}"
+      tmp="${tmp} $i/${MERGERFS_REL_PATH}"
+    done
+    MERGERFS_SOURCES="${tmp}"
+  fi
+  MERGERFS_SOURCES=$(join ":" ${MERGERFS_SOURCES})
+
+  echo "   - MERGERFS_SOURCES: ${MERGERFS_SOURCES}"
+  echo "   - MERGERFS_REL_PATH: ${MERGERFS_REL_PATH}"
+  echo "   - MERGERFS_MOUNT: ${MERGERFS_MOUNT}"
+
+  echo "   - config files processed."
+  echo
+}
+
+mount-mergerfs() {
+  echo "* preparing to mount mergerfs..."
+  # If this mergerfs is already mounted, it must have come from a container that died.
+  # In that case we need to unmount the existing mount first
+  if cat /proc/mounts | grep "${MERGERFS_MOUNT}.*fuse.mergerfs" 1>/dev/null 2>&1; then
+    echo "  - mergerfs ${MERGERFS_MOUNT} is already mounted, unmounting..."
+    fusermount -u ${MERGERFS_MOUNT}
+  fi
+
+  # Create the mount point if it doesn't exist and make it executable
+  if [ ! -d "${MERGERFS_MOUNT}" ]; then
+    echo "   - creating mount point: ${MERGERFS_MOUNT} ..."
+    mkdir -p "${MERGERFS_MOUNT}"
+    chmod a+rx "${MERGERFS_MOUNT}"
+  fi
+
+  # Now mount the mergerfs filesystem
+  echo "   - mounting mergerfs: [ ${MERGERFS_SOURCES} ]"
+  echo "      - to: ${MERGERFS_MOUNT}"
+  mergerfs -o ${MERGERFS_OPTS} ${MERGERFS_SOURCES} ${MERGERFS_MOUNT}
+
+  echo "   - mergerfs mounted."
+  echo
+}
+
+start-cron() {
+  echo "* starting cron..."
+  echo "   - writing crontab..."
+  echo '0 3 * * * /usr/bin/python /app/snapraid-runner/snapraid-runner.py -c /config/snapraid-runner.conf' >/etc/crontabs/root
+  echo "   - starting cron"
+  /usr/sbin/crond -d 6 -c /etc/crontabs -f
+}
+
+# main()
+validate-config
+process-config
+mount-mergerfs
+start-cron

@@ -5,17 +5,17 @@ docker_vols := -v /share/DockerData/pseudoraid/config:/config -v /share:/share:s
 
 all: build
 		
-start:
+start: stop build 
 	docker run --rm -d $(docker_flags) $(docker_vols) $(img_name)
 
-runshell:
+runshell: stop build 
 	docker run -it --rm $(docker_flags) $(docker_vols) $(img_name) /bin/bash
 
 stop:
-	docker stop $(container_name)
-	docker rm $(container_name)
+	docker kill $(container_name) || true
+	docker rm $(container_name) || true
 
-run:
+run: stop build
 	docker run -it --rm $(docker_flags) $(docker_vols) $(img_name)
 
 shell:
@@ -24,5 +24,5 @@ shell:
 build:
 	docker build -t $(img_name) .
 
-deploy:
+deploy: build
 	docker push $(img_name)
