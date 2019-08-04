@@ -59,9 +59,9 @@ validate-config() {
     error ${LINENO} \
       "/config/snapraid-runner.conf found.  This is required to start the container!"
   fi
-  if [ ! -f /config/mergerfs.conf ]; then
+  if [ ! -f /config/container.conf ]; then
     error ${LINENO} \
-      "/config/mergerfs.conf found.  This is required to start the container!"
+      "/config/container.conf found.  This is required to start the container!"
   fi
 
   # makesure /etc/snapraid.conf is a symlink to /config/snapraid.conf
@@ -74,7 +74,7 @@ validate-config() {
 
   # Now let's do some validation on the sources we'll use
   echo "* validating config files..."
-  source /config/mergerfs.conf
+  source /config/container.conf
   MERGERFS_SOURCES=$(grep "^data" /config/snapraid.conf | sed 's/data\s\+\S\+\s\+//')
   sources="${MERGERFS_SOURCES}"
   parity="$(grep "^[2-6]\?-\?parity" /config/snapraid.conf  | sed 's/.*parity\s\+//')"
@@ -157,8 +157,7 @@ mount-mergerfs() {
   fi
 
   # Now mount the mergerfs filesystem
-  echo "   - mounting mergerfs: [ ${MERGERFS_SOURCES} ]"
-  echo "      - to: ${MERGERFS_MOUNT}"
+  echo "   - mounting mergerfs: [ ${MERGERFS_SOURCES} ] --> ${MERGERFS_MOUNT}"
   mergerfs -o ${MERGERFS_OPTS} ${MERGERFS_SOURCES} ${MERGERFS_MOUNT}
 
   echo "   - mergerfs mounted."
@@ -166,9 +165,15 @@ mount-mergerfs() {
 }
 
 start-cron() {
-  echo "* starting cron..."
+  echo "* configuring cron..."
+  echo "   - cron run interval: every ${CRON_RUN_INTERVAL} hours"
+  CRON_RUN_INTERVAL=${CRON_RUN_INTERVAL:-24}
   echo "   - writing crontab..."
-  echo '0 3 * * * /usr/bin/python /app/snapraid-runner/snapraid-runner.py -c /config/snapraid-runner.conf' >/etc/crontabs/root
+  (
+    echo -n "0 */${CRON_RUN_INTERVAL} * * * /usr/bin/python";
+    echo -n " /app/snapraid-runner/snapraid-runner.py -c";
+    echo " /config/snapraid-runner.conf" 
+  ) >/etc/crontabs/root
   echo "   - starting cron"
   /usr/sbin/crond -d 6 -c /etc/crontabs -f
 }
